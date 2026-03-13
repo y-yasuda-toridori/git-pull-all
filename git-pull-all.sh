@@ -5,7 +5,8 @@
 #   1. デフォルトブランチを特定
 #   2. 未コミットの変更や detached HEAD があれば警告してスキップ
 #   3. 変更がなければデフォルトブランチに切替 → git pull --ff-only
-#   4. 結果をサマリーで表示
+#   4. 元のブランチに戻る
+#   5. 結果をサマリーで表示（各リポジトリの現在ブランチ付き）
 #
 # Usage:
 #   cd /path/to/parent && ./git-pull-all.sh
@@ -118,7 +119,8 @@ for i in "${!REPOS[@]}"; do
     default_branch=$(detect_default_branch) || true
     if [[ -z "$default_branch" ]]; then
         echo -e "  ${RED}FAIL: Could not detect default branch${RESET}"
-        RESULTS+=("${RED}FAIL${RESET}    ${repo_name} -- default branch not found")
+        fb=$(git branch --show-current 2>/dev/null) || fb="unknown"
+        RESULTS+=("${RED}FAIL${RESET}    ${repo_name} [${fb}] -- default branch not found")
         FAILED_COUNT=$((FAILED_COUNT + 1))
         echo ""
         continue
@@ -129,7 +131,7 @@ for i in "${!REPOS[@]}"; do
     if [[ -z "$current_branch" ]]; then
         echo -e "  Default branch: ${CYAN}${default_branch}${RESET}  (current: ${YELLOW}detached HEAD${RESET})"
         echo -e "  ${YELLOW}WARNING: Detached HEAD -- skipping${RESET}"
-        RESULTS+=("${YELLOW}SKIP${RESET}    ${repo_name} -- detached HEAD")
+        RESULTS+=("${YELLOW}SKIP${RESET}    ${repo_name} [detached] -- detached HEAD")
         SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
         echo ""
         continue
@@ -147,7 +149,7 @@ for i in "${!REPOS[@]}"; do
         [[ -n "$staged" ]]    && echo -e "    Staged:    ${staged}"
         [[ -n "$unstaged" ]]  && echo -e "    Unstaged:  ${unstaged}"
         [[ -n "$untracked" ]] && echo -e "    Untracked: files exist"
-        RESULTS+=("${YELLOW}SKIP${RESET}    ${repo_name} (branch: ${current_branch}) -- uncommitted changes")
+        RESULTS+=("${YELLOW}SKIP${RESET}    ${repo_name} [${current_branch}] -- uncommitted changes")
         SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
         echo ""
         continue
@@ -159,7 +161,7 @@ for i in "${!REPOS[@]}"; do
         if [[ $checkout_exit -ne 0 ]]; then
             echo -e "  ${RED}FAIL: Could not checkout ${default_branch}${RESET}"
             echo "$checkout_output" | sed 's/^/  /'
-            RESULTS+=("${RED}FAIL${RESET}    ${repo_name} -- checkout failed")
+            RESULTS+=("${RED}FAIL${RESET}    ${repo_name} [${current_branch}] -- checkout to ${default_branch} failed")
             FAILED_COUNT=$((FAILED_COUNT + 1))
             echo ""
             continue
@@ -172,18 +174,37 @@ for i in "${!REPOS[@]}"; do
     if [[ $pull_exit -eq 0 ]]; then
         if echo "$pull_output" | grep -q "Already up to date"; then
             echo -e "  ${GREEN}OK: Already up to date${RESET}"
-            RESULTS+=("${GREEN}OK${RESET}      ${repo_name} (${default_branch}) -- already up to date")
+            pull_status="already up to date"
         else
             echo -e "  ${GREEN}OK: Updated${RESET}"
             echo "$pull_output" | sed 's/^/  /'
-            RESULTS+=("${GREEN}OK${RESET}      ${repo_name} (${default_branch}) -- updated")
+            pull_status="updated"
         fi
         SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
     else
         echo -e "  ${RED}FAIL: git pull failed${RESET}"
         echo "$pull_output" | sed 's/^/  /'
-        RESULTS+=("${RED}FAIL${RESET}    ${repo_name} (${default_branch}) -- pull failed")
+        pull_status="pull failed"
         FAILED_COUNT=$((FAILED_COUNT + 1))
+    fi
+
+    # 元のブランチに戻る
+    if [[ "$current_branch" != "$default_branch" ]]; then
+        restore_output=$(git checkout "$current_branch" 2>&1) && restore_exit=0 || restore_exit=$?
+        if [[ $restore_exit -eq 0 ]]; then
+            echo -e "  Restored branch: ${CYAN}${current_branch}${RESET}"
+        else
+            echo -e "  ${YELLOW}WARNING: Could not restore branch ${current_branch}${RESET}"
+            echo "$restore_output" | sed 's/^/  /'
+        fi
+    fi
+
+    # 結果を格納（現在ブランチ情報付き）
+    final_branch=$(git branch --show-current 2>/dev/null) || final_branch="unknown"
+    if [[ "$pull_status" == "pull failed" ]]; then
+        RESULTS+=("${RED}FAIL${RESET}    ${repo_name} (${default_branch}) [${final_branch}] -- ${pull_status}")
+    else
+        RESULTS+=("${GREEN}OK${RESET}      ${repo_name} (${default_branch}) [${final_branch}] -- ${pull_status}")
     fi
 
     echo ""
