@@ -7,7 +7,8 @@
 - デフォルトブランチを自動検出（`origin/HEAD` → `main`/`master`/`develop` → `git remote show`）
 - 未コミットの変更や detached HEAD を検出した場合は安全にスキップ
 - `--ff-only` による安全な pull（コンフリクトが起きる場合は失敗扱い）
-- カラー表示付きの進捗表示とサマリーレポート
+- pull 後に元のブランチへ自動復帰（作業ブランチを維持）
+- カラー表示付きの進捗表示とサマリーレポート（各リポジトリの現在ブランチ付き）
 
 ## 使い方
 
@@ -39,8 +40,13 @@ Found 5 git repositories
   WARNING: Uncommitted changes detected -- skipping
 
 [3/5] project-c
-  Default branch: main  (current: main)
+  Default branch: main  (current: feature/abc)
   OK: Updated
+  Restored branch: feature/abc
+
+[4/5] project-d
+  Default branch: main  (current: main)
+  OK: Already up to date
 
 ========================================
  Summary
@@ -49,6 +55,12 @@ Found 5 git repositories
  Success: 3
  Skipped: 1
  Failed:  1
+
+  OK      project-a (main) [main] -- already up to date
+  SKIP    project-b [feature/xyz] -- uncommitted changes
+  OK      project-c (main) [feature/abc] -- updated
+  OK      project-d (main) [main] -- already up to date
+  FAIL    project-e (main) [develop] -- pull failed
 ```
 
 ## 動作の流れ
@@ -60,7 +72,8 @@ Found 5 git repositories
    - 未コミットの変更（staged / unstaged / untracked）がある場合はスキップ
    - デフォルトブランチに切替
    - `git pull --ff-only` を実行
-3. 全リポジトリの結果をサマリー表示
+   - 元のブランチに復帰
+3. 全リポジトリの結果をサマリー表示（各リポジトリの現在ブランチ `[branch]` 付き）
 
 ## 要件
 
